@@ -8,9 +8,7 @@ plugins {
 
 android {
     namespace = "com.example.trackme"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.trackme"
@@ -76,4 +74,6 @@ dependencies {
     implementation(libs.lifecycle.runtime.compose)
 
     implementation(libs.play.services.location)
+
+    implementation("com.google.accompanist:accompanist-permissions:0.32.0")
 }
