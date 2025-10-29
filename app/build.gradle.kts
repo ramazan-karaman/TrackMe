@@ -76,4 +76,6 @@ dependencies {
     implementation(libs.play.services.location)
 
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+
+    implementation("androidx.lifecycle:lifecycle-service:2.9.4")
 }

@@ -30,9 +30,9 @@
             </intent-filter>
         </activity>
 
-<!--        <service-->
-<!--            android:name=".services.TrackingService"-->
-<!--            android:foregroundServiceType="location"/>-->
+        <service
+            android:name=".services.TrackingService"
+            android:foregroundServiceType="location"/>
     </application>
 
 </manifest>
