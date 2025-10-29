@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Build
 import android.os.Looper
 import android.util.Log
@@ -15,14 +16,25 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import com.example.trackme.MainActivity
 import com.example.trackme.R
+import com.example.trackme.util.formatDuration
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 class TrackingService: LifecycleService() {
+
+    private var timerJob: Job? = null
+    private var lapStartTime = 0L
+    private var timeRun = 0L
 
     companion object{
         const val ACTION_START_OR_RESUME_SERVICE = "ACTION_START_OR_RESUME_SERVICE"
@@ -32,6 +44,10 @@ class TrackingService: LifecycleService() {
         const val NOTIFICATION_CHANNEL_ID = "tracking_channel"
         const val NOTIFICATION_CHANNEL_NAME = "Konum Takibi"
         const val NOTIFICATION_ID = 1
+
+        val isTracking= MutableStateFlow(false)
+        val pathPoints= MutableStateFlow<List<Location>> (emptyList())
+        val timeRunInMillis= MutableStateFlow(0L)
 
     }
 
@@ -65,19 +81,39 @@ class TrackingService: LifecycleService() {
         intent?.let {
             when (it.action) {
                 ACTION_START_OR_RESUME_SERVICE -> {
-                    Log.d("TrackingService", "Started or Resumed service")
-                    startForegroundService()
-                    startLocationUpdates()
+                    if (!isTracking.value){
+                        Log.d("TrackingService", "Started or Resumed service")
+                        isTracking.value= true
+                        pathPoints.value= emptyList()
+                        timeRunInMillis.value= 0L
+                        startForegroundService()
+                        startLocationUpdates()
+                    }
+
                 }
                 ACTION_PAUSE_SERVICE -> {
                     Log.d("TrackingService", "Paused service")
                 }
                 ACTION_STOP_SERVICE -> {
                     Log.d("TrackingService", "Stopped service")
+                    stopService()
                 }
             }
         }
         return START_STICKY
+    }
+
+    private fun stopService() {
+        Log.d("TrackingService", "Stopping service...")
+        isTracking.value = false
+        timerJob?.cancel()
+        try {
+            fusedLocationProviderClient.removeLocationUpdates(locationCallback)
+        } catch (unlikely: SecurityException) {
+            Log.e("TrackingService", "Konum izni hatası (durdurulamadı): ${unlikely.message}")
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun startForegroundService() {
@@ -94,6 +130,20 @@ class TrackingService: LifecycleService() {
             .setContentText("00:00:00")
             .setContentIntent(getMainActivityPendingIntent())
         startForeground(NOTIFICATION_ID, notificationBuilder.build())
+
+        lapStartTime = System.currentTimeMillis()
+        timerJob?.cancel()
+        timerJob = CoroutineScope(Dispatchers.Main).launch {
+            while (isTracking.value) {
+                val timeElapsed = System.currentTimeMillis() - lapStartTime
+                timeRunInMillis.value = timeRun + timeElapsed
+
+                val formattedTime = formatDuration(timeRunInMillis.value)
+
+                updateNotification(formattedTime)
+                delay(1000L)
+            }
+        }
     }
 
     private fun getMainActivityPendingIntent() = PendingIntent.getActivity(
@@ -108,6 +158,8 @@ class TrackingService: LifecycleService() {
     )
 
     override fun onDestroy() {
+        timerJob?.cancel()
+        isTracking.value= false
         try {
             fusedLocationProviderClient.removeLocationUpdates(locationCallback)
             Log.d("TrackingService", "Konum güncellemeleri durduruldu.")
@@ -121,11 +173,21 @@ class TrackingService: LifecycleService() {
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             super.onLocationResult(result)
-            result.locations.let { locations ->
-                for (location in locations) {
-                    Log.d("TrackingService", "Yeni Konum: ${location.latitude}, ${location.longitude}")
+            if (isTracking.value){
+                result.locations.let { locations ->
+                    for (location in locations) {
+                        Log.d("TrackingService", "Yeni Konum: ${location.latitude}, ${location.longitude}")
+                        addPathPoint(location)
+                    }
                 }
             }
+
+        }
+    }
+
+    private fun addPathPoint(location: Location?) {
+        location?.let {
+            pathPoints.value = pathPoints.value + listOf(it)
         }
     }
 
@@ -151,5 +213,19 @@ class TrackingService: LifecycleService() {
         } catch (unlikely: SecurityException) {
             Log.e("TrackingService", "Konum izni hatası (güncellemeler başlatılamadı): ${unlikely.message}")
         }
+    }
+
+    private fun updateNotification(formattedTime: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setAutoCancel(false)
+            .setOngoing(true)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Konum Takibi Aktif")
+            .setContentText(formattedTime)
+            .setContentIntent(getMainActivityPendingIntent())
+
+        notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
     }
 }
