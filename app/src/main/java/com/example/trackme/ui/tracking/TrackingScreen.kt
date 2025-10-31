@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -17,7 +19,12 @@ import com.google.accompanist.permissions.shouldShowRationale
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun TrackingScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: TrackingViewModel= hiltViewModel()
 ) {
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
     val locationPermissionState = rememberPermissionState(
         permission = Manifest.permission.ACCESS_FINE_LOCATION
     )
@@ -28,7 +35,14 @@ fun TrackingScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Konum İzni Verilmiş! Takip Başlatılabilir.")
+                TrackingScreenContent(
+                    uiState = uiState,
+                    onToggleTracking = { viewModel.toggleTracking() },
+                    onSaveRun = {
+                        viewModel.saveRun()
+                        onNavigateBack()
+                    }
+                )
             }
         }
 
